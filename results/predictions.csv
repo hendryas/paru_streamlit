@@ -1,0 +1,13 @@
+Usia,Jenis_Kelamin,Merokok,Bekerja,Rumah_Tangga,Aktivitas_Begadang,Aktivitas_Olahraga,Asuransi,Penyakit_Bawaan,Prediksi,Prob_Tidak,Prob_Ya,Waktu
+Muda,Pria,Aktif,Tidak,Tidak,Tidak,Jarang,Ada,Ada,Tidak,0.9999999998452065,1.5479324884962733e-10,2025-09-28 12:05:04
+Tua,Pria,Aktif,Ya,Ya,Ya,Jarang,Tidak,Ada,Tidak,0.9999999958157426,4.1842577613679124e-09,2025-09-28 12:06:29
+Muda,Pria,Aktif,Ya,Ya,Ya,Jarang,Tidak,Ada,Tidak,0.9999999947790306,5.22096909906398e-09,2025-09-28 12:06:40
+Tua,Pria,Pasif,Tidak,Ya,Ya,Sering,Ada,Tidak,Tidak,0.9999999448209669,5.5179032929769694e-08,2025-09-28 12:07:33
+Muda,Pria,Aktif,Tidak,Tidak,Tidak,Jarang,Ada,Ada,Tidak,0.9980210379311576,0.0019789620688425227,2025-09-28 12:46:12
+Tua,Pria,Aktif,Tidak,Tidak,Tidak,Jarang,Tidak,Ada,Tidak,0.9966072524274012,0.0033927475725989567,2025-09-28 12:46:32
+Tua,Pria,Aktif,Tidak,Tidak,Tidak,Jarang,Ada,Ada,Tidak,0.9984312543961058,0.0015687456038942183,2025-09-28 13:03:07
+Tua,Pria,Aktif,Tidak,Tidak,Tidak,Jarang,Ada,Ada,Tidak,0.9984312543961058,0.0015687456038942183,2025-09-28 13:03:28
+Tua,Pria,Aktif,Ya,Tidak,Ya,Jarang,Ada,Ada,Tidak,0.9902163897033062,0.009783610296693813,2025-09-28 13:04:36
+Muda,Pria,Aktif,Tidak,Tidak,Tidak,Jarang,Ada,Ada,Tidak,0.9980210379311576,0.0019789620688425227,2025-09-28 13:15:45
+Muda,Pria,Aktif,Tidak,Tidak,Tidak,Jarang,Ada,Ada,Tidak,0.9980210379311576,0.0019789620688425227,2025-09-29 20:32:57
+Tua,Pria,Aktif,Ya,Ya,Ya,Jarang,Tidak,Ada,Tidak,0.9863224723815472,0.013677527618452368,2025-09-29 20:34:20
