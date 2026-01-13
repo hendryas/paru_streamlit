@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import streamlit as st
-from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 
 from services.ml_service import (
     build_encoding_table,
@@ -19,6 +19,8 @@ from services.ml_service import (
 )
 
 MODEL_PATH = "models/naive_bayes_model.pkl"
+ACC_GOOD_THRESHOLD = 0.90
+ACC_OK_THRESHOLD = 0.80
 
 
 @st.cache_data
@@ -70,6 +72,179 @@ def decode_labels(values, encoder):
     return encoder.inverse_transform(np.array(values))
 
 
+def resolve_positive_label(labels, positive_label):
+    if not labels:
+        return positive_label
+    if positive_label in labels:
+        return positive_label
+    if len(labels) == 2:
+        return labels[-1]
+    return labels[0]
+
+
+def get_label_metrics(report_dict, label):
+    if label in report_dict:
+        return report_dict[label]
+    label_key = str(label)
+    if label_key in report_dict:
+        return report_dict[label_key]
+    return {}
+
+
+def compute_metrics(y_true, y_pred, labels=None, positive_label="Ya"):
+    if labels is None:
+        labels = sorted(set(y_true).union(set(y_pred)))
+    labels = list(labels)
+    positive_label = resolve_positive_label(labels, positive_label)
+
+    accuracy = accuracy_score(y_true, y_pred)
+    report_dict = classification_report(
+        y_true, y_pred, labels=labels, output_dict=True, zero_division=0
+    )
+    report_df = (
+        pd.DataFrame(report_dict)
+        .transpose()
+        .reset_index()
+        .rename(columns={"index": "Label"})
+    )
+    cm = confusion_matrix(y_true, y_pred, labels=labels)
+
+    tp_tn_fp_fn = {}
+    if cm.shape == (2, 2) and positive_label in labels:
+        pos_idx = labels.index(positive_label)
+        neg_idx = 1 - pos_idx
+        tp_tn_fp_fn = {
+            "tp": int(cm[pos_idx, pos_idx]),
+            "fn": int(cm[pos_idx, neg_idx]),
+            "fp": int(cm[neg_idx, pos_idx]),
+            "tn": int(cm[neg_idx, neg_idx]),
+        }
+
+    return {
+        "accuracy": float(accuracy),
+        "report_dict": report_dict,
+        "report_df": report_df,
+        "cm": cm,
+        "labels": labels,
+        "positive_label": positive_label,
+        "tp_tn_fp_fn": tp_tn_fp_fn,
+    }
+
+
+def performance_label(acc):
+    if acc >= ACC_GOOD_THRESHOLD:
+        return "baik"
+    if acc >= ACC_OK_THRESHOLD:
+        return "cukup baik"
+    return "masih perlu peningkatan"
+
+
+def build_discussion_text(acc, report_dict, cm, labels, positive_label="Ya"):
+    perf = performance_label(acc)
+    acc_pct = acc * 100
+    pos_label = resolve_positive_label(labels, positive_label)
+    pos_metrics = get_label_metrics(report_dict, pos_label)
+    recall_pos = pos_metrics.get("recall")
+    precision_pos = pos_metrics.get("precision")
+
+    sentences = [
+        f"Secara umum, performa model {perf} dengan akurasi {acc_pct:.2f}%.",
+    ]
+
+    if recall_pos is not None:
+        recall_pct = recall_pos * 100
+        precision_pct = (precision_pos or 0.0) * 100
+        if recall_pos >= 0.85:
+            sentences.append(
+                f"Model cukup efektif mendeteksi kasus kelas {pos_label} "
+                f"(recall {recall_pct:.2f}%, precision {precision_pct:.2f}%)."
+            )
+        else:
+            sentences.append(
+                f"Recall kelas {pos_label} masih terbatas "
+                f"(recall {recall_pct:.2f}%), sehingga deteksi kasus terindikasi perlu perhatian."
+            )
+    else:
+        sentences.append(
+            f"Recall untuk kelas {pos_label} belum tersedia, sehingga interpretasi sensitivitas terbatas."
+        )
+
+    if cm is not None and cm.shape == (2, 2) and pos_label in labels:
+        pos_idx = labels.index(pos_label)
+        neg_idx = 1 - pos_idx
+        tp = int(cm[pos_idx, pos_idx])
+        fn = int(cm[pos_idx, neg_idx])
+        fp = int(cm[neg_idx, pos_idx])
+        total_pos = tp + fn
+        fn_rate = (fn / total_pos) if total_pos else 0.0
+        if fn > fp or fn_rate > 0.15:
+            sentences.append(
+                "Jumlah false negative relatif tinggi sehingga ada potensi kasus positif yang terlewat."
+            )
+        else:
+            sentences.append(
+                "False negative relatif terkendali sehingga risiko kasus positif terlewat lebih rendah."
+            )
+    else:
+        sentences.append(
+            "Confusion matrix multi-kelas atau tidak lengkap, sehingga analisis FN/FP biner tidak dilakukan."
+        )
+
+    sentences.append(
+        "Perbaikan dapat dilakukan melalui penyesuaian fitur, penambahan data, dan validasi yang lebih kuat."
+    )
+    return " ".join(sentences)
+
+
+def compute_cleaning_summary(df_before, df_after, id_col_candidates=None):
+    if id_col_candidates is None:
+        id_col_candidates = ["No", "no", "NO"]
+
+    def has_id_column(df):
+        cols = [str(c).strip().lower() for c in df.columns]
+        return any(str(candidate).strip().lower() in cols for candidate in id_col_candidates)
+
+    has_before = has_id_column(df_before)
+    has_after = has_id_column(df_after)
+
+    if not has_before and not has_after:
+        no_before = "N/A"
+        no_after = "N/A"
+    else:
+        no_before = "Yes" if has_before else "No"
+        no_after = "Yes" if has_after else "No"
+
+    rows = [
+        {
+            "Component": "Total records",
+            "Before Cleaning": int(len(df_before)),
+            "After Cleaning": int(len(df_after)),
+        },
+        {
+            "Component": "Total columns",
+            "Before Cleaning": int(df_before.shape[1]),
+            "After Cleaning": int(df_after.shape[1]),
+        },
+        {
+            "Component": "Missing values (total)",
+            "Before Cleaning": int(df_before.isna().sum().sum()),
+            "After Cleaning": int(df_after.isna().sum().sum()),
+        },
+        {
+            "Component": "Duplicate rows",
+            "Before Cleaning": int(df_before.duplicated().sum()),
+            "After Cleaning": int(df_after.duplicated().sum()),
+        },
+        {
+            "Component": "\"No\" column used as feature (Yes/No)",
+            "Before Cleaning": no_before,
+            "After Cleaning": no_after,
+        },
+    ]
+
+    return pd.DataFrame(rows)
+
+
 st.title("Pipeline Report (Streamlit Output)")
 st.write("Gunakan halaman ini untuk melihat bukti setiap tahap pipeline 4.1 sampai 4.8.")
 
@@ -81,9 +256,10 @@ if uploaded_file:
 elif "uploaded_df" in st.session_state:
     df_raw = st.session_state["uploaded_df"]
 else:
-    st.info("Upload dataset terlebih dahulu untuk menampilkan pipeline report.")
+    st.warning("Dataset belum tersedia, silakan upload/load dataset terlebih dahulu.")
     st.stop()
 
+df_before = df_raw.copy()
 df_clean, dropped_cols = drop_non_feature_columns(df_raw)
 columns_list = list(df_clean.columns)
 
@@ -159,6 +335,11 @@ with st.expander("4.1 Load Dataset", expanded=True):
 
 with st.expander("4.2 Data Preparation (Preprocessing)", expanded=True):
     st.subheader("4.2 Data Preparation (Preprocessing)")
+
+    summary_df = compute_cleaning_summary(df_before, df_clean)
+    st.markdown("### Table 4.3 Dataset Summary: Before vs After Cleaning")
+    st.dataframe(summary_df, use_container_width=True)
+    st.caption("Summary computed from raw dataset vs cleaned dataset (duplicates/missing handled, ID columns removed).")
 
     missing_values = df_clean.isna().sum().reset_index()
     missing_values.columns = ["Column", "Missing_Values"]
@@ -362,11 +543,55 @@ with st.expander("4.8 Model Evaluation", expanded=True):
     if not training_state:
         st.warning("Model belum dilatih, silakan training dulu.")
     else:
+        if "y_test" not in training_state or "y_pred" not in training_state:
+            st.warning(
+                "Belum ada hasil prediksi untuk evaluasi. Jalankan Training + Testing terlebih dahulu."
+            )
+            st.stop()
+
         y_test_labels = decode_labels(training_state["y_test"], target_encoder)
         y_pred_labels = decode_labels(training_state["y_pred"], target_encoder)
         cm_labels = class_labels
 
-        cm = confusion_matrix(y_test_labels, y_pred_labels, labels=cm_labels)
+        metrics = compute_metrics(
+            y_test_labels,
+            y_pred_labels,
+            labels=cm_labels,
+            positive_label="Ya",
+        )
+        st.session_state["eval_metrics"] = metrics
+
+        acc_pct = metrics["accuracy"] * 100
+        pos_label = metrics["positive_label"]
+        pos_metrics = get_label_metrics(metrics["report_dict"], pos_label)
+        precision_pos = pos_metrics.get("precision", 0.0) * 100
+        recall_pos = pos_metrics.get("recall", 0.0) * 100
+        f1_pos = pos_metrics.get("f1-score", 0.0) * 100
+
+        metric_cols = st.columns(4)
+        metric_cols[0].metric("Accuracy", f"{acc_pct:.2f}%")
+        metric_cols[1].metric(f"Precision ({pos_label})", f"{precision_pos:.2f}%")
+        metric_cols[2].metric(f"Recall ({pos_label})", f"{recall_pos:.2f}%")
+        metric_cols[3].metric(f"F1 ({pos_label})", f"{f1_pos:.2f}%")
+
+        st.write(
+            f"Berdasarkan hasil pengujian, model memperoleh nilai akurasi sebesar {acc_pct:.2f}%."
+        )
+        st.write(
+            f"Performa model pada data uji dikategorikan: {performance_label(metrics['accuracy'])}."
+        )
+
+        st.markdown("#### 4.8.4 Discussion Summary")
+        discussion_text = build_discussion_text(
+            metrics["accuracy"],
+            metrics["report_dict"],
+            metrics["cm"],
+            metrics["labels"],
+            positive_label="Ya",
+        )
+        st.write(discussion_text)
+
+        cm = metrics["cm"]
         fig, ax = plt.subplots()
         im = ax.imshow(cm, cmap="Blues")
         ax.set_xticks(np.arange(len(cm_labels)))
@@ -387,15 +612,8 @@ with st.expander("4.8 Model Evaluation", expanded=True):
             "figure_4_15_confusion_matrix",
         )
 
-        report_dict = classification_report(y_test_labels, y_pred_labels, output_dict=True)
-        report_df = (
-            pd.DataFrame(report_dict)
-            .transpose()
-            .reset_index()
-            .rename(columns={"index": "Label"})
-        )
         render_table(
-            report_df,
+            metrics["report_df"],
             "Table 4.16 Classification Report",
             "table_4_16_classification_report.csv",
             "table_4_16_classification_report",
