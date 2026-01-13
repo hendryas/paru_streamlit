@@ -7,24 +7,93 @@ import os
 import pandas as pd
 from datetime import datetime
 
+def normalize_columns(df):
+    """
+    Menormalkan nama kolom agar konsisten.
+    """
+    df = df.copy()
+    df.columns = [str(c).strip() for c in df.columns]
+    return df
+
+def drop_non_feature_columns(df):
+    """
+    Menghapus kolom ID/nomor yang tidak informatif.
+    """
+    df = normalize_columns(df)
+    drop_cols = [c for c in ["No", "ID", "Id", "index"] if c in df.columns]
+    if drop_cols:
+        df.drop(columns=drop_cols, inplace=True)
+    return df, drop_cols
+
+def build_encoding_table(encoders):
+    """
+    Membuat tabel mapping encoding: Kolom | Kategori | Nilai.
+    """
+    rows = []
+    for col, le in encoders.items():
+        if not hasattr(le, "classes_"):
+            continue
+        for idx, cls in enumerate(le.classes_):
+            rows.append({
+                "Kolom": col,
+                "Kategori": str(cls),
+                "Nilai": int(idx)
+            })
+    return pd.DataFrame(rows)
+
+def split_data(X, y, test_size=0.2, random_state=42):
+    """
+    Split data dengan stratify.
+    """
+    return train_test_split(
+        X, y, test_size=test_size, random_state=random_state, stratify=y
+    )
+
+def train_model(X_train, y_train):
+    """
+    Melatih model CategoricalNB.
+    """
+    model = CategoricalNB()
+    model.fit(X_train, y_train)
+    return model
+
+def evaluate_model(model, X_test, y_test):
+    """
+    Evaluasi model dan kembalikan prediksi dan metrik.
+    """
+    y_pred = model.predict(X_test)
+    acc = accuracy_score(y_test, y_pred)
+    cm = confusion_matrix(y_test, y_pred)
+    report = classification_report(y_test, y_pred, output_dict=True)
+    return y_pred, acc, cm, report
+
+def save_model_pack(model, encoders, target_col, feature_cols, model_path):
+    """
+    Menyimpan model beserta encoder dan metadata.
+    """
+    os.makedirs(os.path.dirname(model_path), exist_ok=True)
+    pack = {
+        "model": model,
+        "encoders": encoders,
+        "target_col": target_col,
+        "feature_cols": feature_cols
+    }
+    joblib.dump(pack, model_path)
+    return pack
+
 def preprocess_data(df, target_col):
     """
     Melakukan encoding data kategorikal & memisahkan fitur dan target.
     """
-
-    # --- NORMALISASI NAMA KOLOM & DROP KOLOM NON-FEATURE ---
-    df = df.copy()
-    # rapikan nama kolom
-    df.columns = [str(c).strip() for c in df.columns]
-    # buang kolom-kolom ID/nomor yang tidak informatif
-    drop_cols = [c for c in ["No", "ID", "Id", "index"] if c in df.columns]
-    if drop_cols:
-        df.drop(columns=drop_cols, inplace=True)
+    target_col = str(target_col).strip()
+    df, _ = drop_non_feature_columns(df)
 
     # (opsional) normalisasi teks seperti sebelumnya kalau kamu pakai
     # df = _normalize_df(df)
 
     # --- PISAH FITUR & TARGET ---
+    if target_col not in df.columns:
+        raise ValueError(f"Kolom target '{target_col}' tidak ditemukan.")
     X = df.drop(columns=[target_col]).copy()
     y = df[target_col].copy()
 
@@ -45,32 +114,16 @@ def preprocess_data(df, target_col):
 
 def train_and_evaluate(df, target_col, model_path="models/naive_bayes_model.pkl"):
     """
-    Training Naïve Bayes dan evaluasi dengan train-test split.
+    Training Naive Bayes dan evaluasi dengan train-test split.
     """
-    os.makedirs(os.path.dirname(model_path), exist_ok=True)
-
     X, y, encoders = preprocess_data(df, target_col)
     feature_cols = list(X.columns)
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42, stratify=y
-    )
+    X_train, X_test, y_train, y_test = split_data(X, y)
 
-    model = CategoricalNB()
-    model.fit(X_train, y_train)
+    model = train_model(X_train, y_train)
+    _, acc, cm, report = evaluate_model(model, X_test, y_test)
 
-    y_pred = model.predict(X_test)
-
-    acc = accuracy_score(y_test, y_pred)
-    cm = confusion_matrix(y_test, y_pred)
-    report = classification_report(y_test, y_pred, output_dict=True)
-
-    pack = {
-        "model": model,
-        "encoders": encoders,
-        "target_col": target_col,
-        "feature_cols": feature_cols
-    }
-    joblib.dump(pack, model_path)
+    save_model_pack(model, encoders, target_col, feature_cols, model_path)
 
     return acc, cm, report
 

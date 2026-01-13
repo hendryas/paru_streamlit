@@ -10,10 +10,13 @@ uploaded_file = st.file_uploader("Upload dataset (Excel/CSV)", type=["csv", "xls
 
 if uploaded_file:
     df = load_dataset(uploaded_file)
+    st.session_state["uploaded_df"] = df
+    st.session_state["uploaded_filename"] = uploaded_file.name
     st.subheader("📊 Data Sample")
     st.dataframe(df.head(), use_container_width=True)
 
     target_col = st.selectbox("Pilih kolom target:", df.columns, index=len(df.columns)-1)
+    st.session_state["target_col"] = target_col
 
     if st.button("Latih & Simpan Model"):
         acc, cm, report = train_and_evaluate(df, target_col)
