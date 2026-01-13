@@ -5,10 +5,11 @@ from services.ml_service import load_model, predict_input, save_prediction
 st.title("🩺 Prediksi Manual Gejala Pasien")
 
 # Load model & encoders
-model, encoders, error = load_model()
+pack, error = load_model()
 if error:
     st.warning(error)
     st.stop()
+encoders = pack.get("encoders", {})
 
 st.subheader("📝 Input Gejala Pasien")
 
@@ -35,7 +36,7 @@ with st.expander("🔧 Lihat kelas yang dikenali encoder"):
 
 if st.button("🔮 Prediksi"):
     try:
-        hasil, proba, proba_dict, kelas = predict_input(input_data, model, encoders)
+        hasil, proba, proba_dict, kelas = predict_input(input_data, pack)
         st.success(f"✅ Hasil Prediksi: **{hasil}**")
 
         st.write("📊 Probabilitas:", proba_dict)

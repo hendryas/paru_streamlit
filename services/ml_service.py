@@ -50,6 +50,7 @@ def train_and_evaluate(df, target_col, model_path="models/naive_bayes_model.pkl"
     os.makedirs(os.path.dirname(model_path), exist_ok=True)
 
     X, y, encoders = preprocess_data(df, target_col)
+    feature_cols = list(X.columns)
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42, stratify=y
     )
@@ -63,44 +64,71 @@ def train_and_evaluate(df, target_col, model_path="models/naive_bayes_model.pkl"
     cm = confusion_matrix(y_test, y_pred)
     report = classification_report(y_test, y_pred, output_dict=True)
 
-    joblib.dump((model, encoders), model_path)
+    pack = {
+        "model": model,
+        "encoders": encoders,
+        "target_col": target_col,
+        "feature_cols": feature_cols
+    }
+    joblib.dump(pack, model_path)
 
     return acc, cm, report
 
 def load_model(model_path="models/naive_bayes_model.pkl"):
     """
-    Memuat model Naïve Bayes beserta encoder.
+    Memuat model Naive Bayes beserta encoder.
     """
     if not os.path.exists(model_path) or os.path.getsize(model_path) == 0:
-        return None, None, "⚠️ Model belum ada atau file kosong. Silakan latih ulang model."
+        return None, "Model belum ada atau file kosong. Silakan latih ulang model."
     try:
-        model, encoders = joblib.load(model_path)
-        return model, encoders, None
+        loaded = joblib.load(model_path)
+        if isinstance(loaded, tuple) and len(loaded) == 2:
+            return None, "Format model lama (tuple) terdeteksi. Silakan latih ulang model."
+        if not isinstance(loaded, dict):
+            return None, f"Format model tidak dikenal: {type(loaded)}. Silakan latih ulang model."
+        required_keys = {"model", "encoders", "target_col", "feature_cols"}
+        missing = required_keys - set(loaded.keys())
+        if missing:
+            return None, f"Model tidak lengkap, kunci hilang: {sorted(missing)}. Silakan latih ulang model."
+        return loaded, None
     except Exception as e:
-        return None, None, f"❌ Gagal memuat model: {e}"
+        return None, f"Gagal memuat model: {e}"
 
-def predict_input(input_dict, model, encoders):
+def predict_input(input_dict, pack):
     """
     Melakukan prediksi dari input pasien (dict).
     Mengembalikan hasil prediksi (label), probabilitas, dan dict probabilitas.
     """
-    df_input = pd.DataFrame([input_dict])
+    if not isinstance(pack, dict):
+        raise ValueError("Model pack tidak valid. Silakan latih ulang model.")
+    model = pack.get("model")
+    encoders = pack.get("encoders", {})
+    target_col = pack.get("target_col")
+    feature_cols = pack.get("feature_cols", [])
+    if model is None or not feature_cols or target_col is None:
+        raise ValueError("Model pack tidak lengkap. Silakan latih ulang model.")
+
+    df_input = pd.DataFrame([input_dict]).reindex(columns=feature_cols)
 
     # Encode sesuai encoder hasil training
-    for col in df_input.columns:
+    for col in feature_cols:
         if col in encoders:
             le = encoders[col]
-            df_input[col] = le.transform(df_input[col])
+            df_input[col] = le.transform(df_input[col].astype(str))
 
     # Prediksi
     pred = model.predict(df_input)[0]
     proba = model.predict_proba(df_input)[0]
 
     # Decode hasil prediksi
-    target_col = list(encoders.keys())[-1]
-    hasil = encoders[target_col].inverse_transform([pred])[0]
-    kelas = encoders[target_col].classes_
-    proba_dict = {kelas[i]: float(proba[i]) for i in range(len(kelas))}
+    if target_col in encoders:
+        target_encoder = encoders[target_col]
+        hasil = target_encoder.inverse_transform([pred])[0]
+        kelas = target_encoder.inverse_transform(model.classes_)
+    else:
+        hasil = pred
+        kelas = model.classes_
+    proba_dict = {str(kelas[i]): float(proba[i]) for i in range(len(kelas))}
 
     return hasil, proba, proba_dict, kelas
 
